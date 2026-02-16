@@ -3,7 +3,7 @@ Team rating and prediction model using Elo ratings
 """
 import math
 from typing import Dict, Tuple
-from soccer_bot.config import HOME_ADVANTAGE, ELO_K_FACTOR, INITIAL_ELO
+from soccer_bot.config import HOME_ADVANTAGE_ELO, ELO_K_FACTOR, INITIAL_ELO, MARKET_SHRINK_FACTOR, MIN_PROBABILITY, MAX_PROBABILITY
 
 
 class TeamRatings:
@@ -76,11 +76,26 @@ class PredictionModel:
     
     def __init__(self, team_ratings: TeamRatings):
         self.team_ratings = team_ratings
-        self.home_advantage = HOME_ADVANTAGE
+        self.home_advantage_elo = HOME_ADVANTAGE_ELO
+        self.market_shrink_factor = MARKET_SHRINK_FACTOR
+    
+    def elo_to_win_probability(self, rating_a: float, rating_b: float) -> float:
+        """
+        Convert Elo rating difference to win probability using logistic formula
+        
+        Args:
+            rating_a: Elo rating of team A
+            rating_b: Elo rating of team B
+            
+        Returns:
+            Win probability for team A (0-1)
+        """
+        return 1.0 / (1.0 + math.pow(10, (rating_b - rating_a) / 400.0))
     
     def predict_match_probabilities(self, home_team: str, away_team: str,
                                    home_form: float = 0.0, away_form: float = 0.0,
-                                   home_goal_diff: int = 0, away_goal_diff: int = 0) -> Dict[str, float]:
+                                   home_goal_diff: int = 0, away_goal_diff: int = 0,
+                                   market_probabilities: Dict[str, float] = None) -> Dict[str, float]:
         """
         Predict match outcome probabilities
         
@@ -91,6 +106,7 @@ class PredictionModel:
             away_form: Recent form factor for away team (-1 to 1)
             home_goal_diff: Goal difference for home team
             away_goal_diff: Goal difference for away team
+            market_probabilities: Optional market probabilities for calibration
             
         Returns:
             Dictionary with probabilities for home, draw, away (as percentages)
@@ -99,8 +115,8 @@ class PredictionModel:
         home_rating = self.team_ratings.get_rating(home_team)
         away_rating = self.team_ratings.get_rating(away_team)
         
-        # Adjust for home advantage
-        adjusted_home_rating = home_rating + (self.home_advantage * 400)
+        # Adjust for home advantage (now in Elo points, not factor)
+        adjusted_home_rating = home_rating + self.home_advantage_elo
         
         # Adjust for form (each 0.1 form = ~10 Elo points)
         adjusted_home_rating += home_form * 100
@@ -110,8 +126,8 @@ class PredictionModel:
         goal_diff_impact = max(-5, min(5, home_goal_diff - away_goal_diff)) * 5
         adjusted_home_rating += goal_diff_impact
         
-        # Calculate expected score for home team
-        home_win_expectation = self.team_ratings.expected_score(adjusted_home_rating, adjusted_away_rating)
+        # Calculate expected score for home team using proper logistic formula
+        home_win_expectation = self.elo_to_win_probability(adjusted_home_rating, adjusted_away_rating)
         
         # Convert to three-way probabilities (home, draw, away)
         # Using a simplified model: stronger expectation = higher win probability
@@ -128,8 +144,22 @@ class PredictionModel:
             draw_prob = draw_base * 100 * (1 - abs(home_win_expectation - 0.5) * 0.5)
             home_prob = 100 - away_prob - draw_prob
         
-        return {
-            'home': max(5, min(85, home_prob)),  # Cap between 5-85%
-            'draw': max(10, min(40, draw_prob)),  # Cap between 10-40%
-            'away': max(5, min(85, away_prob))    # Cap between 5-85%
+        # Apply calibration caps
+        raw_probs = {
+            'home': max(MIN_PROBABILITY, min(MAX_PROBABILITY, home_prob)),
+            'draw': max(10, min(40, draw_prob)),
+            'away': max(MIN_PROBABILITY, min(MAX_PROBABILITY, away_prob))
         }
+        
+        # Apply market calibration if market probabilities provided
+        if market_probabilities and self.market_shrink_factor > 0:
+            calibrated_probs = {}
+            for outcome in ['home', 'draw', 'away']:
+                model_prob = raw_probs[outcome]
+                market_prob = market_probabilities.get(outcome, model_prob)
+                # Shrink model probability toward market
+                calibrated_prob = (1 - self.market_shrink_factor) * model_prob + self.market_shrink_factor * market_prob
+                calibrated_probs[outcome] = calibrated_prob
+            return calibrated_probs
+        
+        return raw_probs

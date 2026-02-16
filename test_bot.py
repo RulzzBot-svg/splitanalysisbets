@@ -75,13 +75,21 @@ def test_kelly_criterion():
     # Example: 60% win probability, odds of 2.0
     # Kelly = (2.0 * 0.6 - 1) / (2.0 - 1) = 0.2 / 1.0 = 0.2 (20%)
     # Half-Kelly = 0.1 (10%)
+    # But capped at MAX_STAKE_PERCENT (5% by default)
     kelly_frac = kelly_criterion(0.6, 2.0, fraction=0.5)
-    assert abs(kelly_frac - 0.1) < 0.01
+    assert kelly_frac == 0.05  # Capped at 5%
     
     # No edge case: 50% probability, odds 2.0
     # Kelly = (2.0 * 0.5 - 1) / (2.0 - 1) = 0 / 1.0 = 0
     kelly_frac = kelly_criterion(0.5, 2.0, fraction=0.5)
     assert kelly_frac == 0.0
+    
+    # Test with lower probability that won't hit cap
+    # 52% probability, odds 2.0
+    # Kelly = (2.0 * 0.52 - 1) / (2.0 - 1) = 0.04 / 1.0 = 0.04 (4%)
+    # Half-Kelly = 0.02 (2%), won't hit cap
+    kelly_frac = kelly_criterion(0.52, 2.0, fraction=0.5)
+    assert abs(kelly_frac - 0.02) < 0.01
     
     print("✓ Kelly criterion works")
 
