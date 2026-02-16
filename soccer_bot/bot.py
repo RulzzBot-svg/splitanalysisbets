@@ -27,7 +27,8 @@ class SoccerBettingBot:
     def analyze_match_manual(self, home_team: str, away_team: str,
                            home_odds: float, draw_odds: float, away_odds: float,
                            home_form: float = 0.0, away_form: float = 0.0,
-                           home_goal_diff: int = 0, away_goal_diff: int = 0) -> Dict:
+                           home_goal_diff: int = 0, away_goal_diff: int = 0,
+                           use_calibration: bool = True) -> Dict:
         """
         Analyze a match with manual odds input
         
@@ -41,6 +42,7 @@ class SoccerBettingBot:
             away_form: Recent form for away team (-1 to 1)
             home_goal_diff: Goal difference for home team
             away_goal_diff: Goal difference for away team
+            use_calibration: Apply market calibration to model probabilities
             
         Returns:
             Analysis dictionary with recommendations
@@ -53,9 +55,10 @@ class SoccerBettingBot:
         # Remove bookmaker margin
         market_probs = remove_bookmaker_margin(home_implied, draw_implied, away_implied)
         
-        # Get true probabilities from model
+        # Get true probabilities from model (with optional market calibration)
         true_probs = self.prediction_model.predict_match_probabilities(
-            home_team, away_team, home_form, away_form, home_goal_diff, away_goal_diff
+            home_team, away_team, home_form, away_form, home_goal_diff, away_goal_diff,
+            market_probabilities=market_probs if use_calibration else None
         )
         
         # Calculate edges
@@ -75,7 +78,7 @@ class SoccerBettingBot:
         
         recommendation = None
         if should_bet(edge, EDGE_THRESHOLD):
-            # Calculate bet size using Half Kelly
+            # Calculate bet size using improved Kelly or flat staking
             bet_size = calculate_bet_size(self.bankroll, true_prob / 100.0, odds)
             
             recommendation = {
@@ -111,7 +114,8 @@ class SoccerBettingBot:
                 'home': round(self.team_ratings.get_rating(home_team), 0),
                 'away': round(self.team_ratings.get_rating(away_team), 0)
             },
-            'recommendation': recommendation
+            'recommendation': recommendation,
+            'calibration_applied': use_calibration
         }
     
     def place_bet(self, home_team: str, away_team: str, bet_type: str,
