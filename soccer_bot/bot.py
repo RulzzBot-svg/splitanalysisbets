@@ -2,7 +2,10 @@
 Main application for soccer betting bot
 """
 from typing import Dict, Optional, List
-from soccer_bot.api_client import FootballDataClient
+try:
+    from soccer_bot.api_client import FootballDataClient
+except Exception:
+    FootballDataClient = None
 from soccer_bot.probability import odds_to_implied_probability, remove_bookmaker_margin
 from soccer_bot.model import TeamRatings, PredictionModel
 from soccer_bot.betting import calculate_edge, should_bet, calculate_bet_size

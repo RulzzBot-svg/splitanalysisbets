@@ -2,9 +2,22 @@
 Configuration module for soccer betting bot
 """
 import os
-from dotenv import load_dotenv
+try:
+	from dotenv import load_dotenv
+	load_dotenv()
+except Exception:
+	# `python-dotenv` is optional; if it's not installed, environment variables
+	# will be read from the environment only.
+	pass
 
-load_dotenv()
+# If an API key wasn't provided via environment or .env, try the example file
+if not os.getenv('FOOTBALL_DATA_API_KEY'):
+	try:
+		# attempt to load .env.example as a fallback
+		from dotenv import load_dotenv as _load
+		_load('.env.example')
+	except Exception:
+		pass
 
 # API Configuration
 FOOTBALL_DATA_API_KEY = os.getenv('FOOTBALL_DATA_API_KEY', '')
@@ -12,7 +25,8 @@ FOOTBALL_DATA_BASE_URL = 'https://api.football-data.org/v4'
 
 # Betting Configuration
 BANKROLL = float(os.getenv('BANKROLL', 1000.0))
-EDGE_THRESHOLD = float(os.getenv('EDGE_THRESHOLD', 5.0))  # Minimum edge percentage to bet (increased from 2.5% to 5%)
+# Default edge threshold set to 2.5% to match README/Quickstart
+EDGE_THRESHOLD = float(os.getenv('EDGE_THRESHOLD', 2.5))  # Minimum edge percentage to bet
 USE_FLAT_STAKING = os.getenv('USE_FLAT_STAKING', 'false').lower() == 'true'  # Use flat staking instead of Kelly
 
 # Model Configuration
@@ -21,7 +35,8 @@ ELO_K_FACTOR = 32  # Elo rating change factor
 INITIAL_ELO = 1500  # Starting Elo rating for new teams
 
 # Staking Configuration
-KELLY_FRACTION = 0.25  # Use quarter-Kelly for conservative staking (was 0.5)
+# Default to Half-Kelly to match README examples
+KELLY_FRACTION = 0.5  # Use half-Kelly for bet sizing
 MAX_STAKE_PERCENT = 5.0  # Maximum stake as % of bankroll per bet
 FLAT_STAKE_PERCENT = 1.5  # Flat staking option as % of bankroll
 
