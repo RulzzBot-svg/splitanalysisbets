@@ -5,6 +5,7 @@ import sqlite3
 from typing import List, Dict, Optional
 from datetime import datetime
 from soccer_bot.config import DB_PATH
+from soccer_bot.model import normalize_team_name
 
 
 class BettingDatabase:
@@ -160,14 +161,15 @@ class BettingDatabase:
         """Save team Elo rating"""
         conn = self.get_connection()
         cursor = conn.cursor()
-        
+
         timestamp = datetime.now().isoformat()
-        
+        team_key = normalize_team_name(team_name)
+
         cursor.execute("""
             INSERT OR REPLACE INTO team_ratings (team_name, elo_rating, last_updated)
             VALUES (?, ?, ?)
-        """, (team_name, elo_rating, timestamp))
-        
+        """, (team_key, elo_rating, timestamp))
+
         conn.commit()
         conn.close()
     
@@ -175,12 +177,15 @@ class BettingDatabase:
         """Load all team ratings"""
         conn = self.get_connection()
         cursor = conn.cursor()
-        
         cursor.execute("SELECT team_name, elo_rating FROM team_ratings")
         rows = cursor.fetchall()
-        
-        ratings = {row[0]: row[1] for row in rows}
-        
+
+        ratings: Dict[str, float] = {}
+        for row in rows:
+            key = normalize_team_name(row[0])
+            # last row wins; if duplicates exist we overwrite with normalized key
+            ratings[key] = row[1]
+
         conn.close()
         return ratings
     
@@ -189,13 +194,16 @@ class BettingDatabase:
         """Add match result to database"""
         conn = self.get_connection()
         cursor = conn.cursor()
-        
+
+        home_key = normalize_team_name(home_team)
+        away_key = normalize_team_name(away_team)
+
         cursor.execute("""
             INSERT INTO match_results (
                 match_date, home_team, away_team, home_score, away_score, competition
             ) VALUES (?, ?, ?, ?, ?, ?)
-        """, (match_date, home_team, away_team, home_score, away_score, competition))
-        
+        """, (match_date, home_key, away_key, home_score, away_score, competition))
+
         conn.commit()
         conn.close()
     
