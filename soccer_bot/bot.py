@@ -8,9 +8,9 @@ except Exception:
     FootballDataClient = None
 from soccer_bot.probability import odds_to_implied_probability, remove_bookmaker_margin
 from soccer_bot.model import TeamRatings, PredictionModel
-from soccer_bot.betting import calculate_edge, should_bet, calculate_bet_size
+from soccer_bot.betting import calculate_edge, calculate_bet_size
 from soccer_bot.database import BettingDatabase
-from soccer_bot.config import BANKROLL, EDGE_THRESHOLD
+from soccer_bot.config import BANKROLL, MIN_FAVORITE_PROB, MIN_ELO_GAP
 
 
 class SoccerBettingBot:
@@ -64,36 +64,58 @@ class SoccerBettingBot:
             market_probabilities=market_probs if use_calibration else None
         )
         
-        # Calculate edges
+        # Calculate edges (kept for logging/stats)
         home_edge = calculate_edge(true_probs['home'], market_probs['home'])
         draw_edge = calculate_edge(true_probs['draw'], market_probs['draw'])
         away_edge = calculate_edge(true_probs['away'], market_probs['away'])
-        
-        # Determine best bet
-        edges = [
-            ('home', home_edge, home_odds, true_probs['home'], market_probs['home']),
-            ('draw', draw_edge, draw_odds, true_probs['draw'], market_probs['draw']),
-            ('away', away_edge, away_odds, true_probs['away'], market_probs['away'])
-        ]
-        
-        best_bet = max(edges, key=lambda x: x[1])
-        bet_type, edge, odds, true_prob, market_prob = best_bet
-        
+
+        # High hit-rate strategy: only consider the single favorite (home/away)
+        # 1) pick the outcome with highest model probability
+        # 2) require favorite prob >= MIN_FAVORITE_PROB
+        # 3) require model_prob >= market_prob (market confirmation)
+        # 4) require Elo gap >= MIN_ELO_GAP
         recommendation = None
-        if should_bet(edge, EDGE_THRESHOLD):
-            # Calculate bet size using improved Kelly or flat staking
-            bet_size = calculate_bet_size(self.bankroll, true_prob / 100.0, odds)
-            
-            recommendation = {
-                'bet_type': bet_type,
-                'odds': odds,
-                'stake': round(bet_size, 2),
-                'edge': round(edge, 2),
-                'true_probability': round(true_prob, 2),
-                'market_probability': round(market_prob, 2),
-                'potential_return': round(bet_size * odds, 2),
-                'potential_profit': round(bet_size * (odds - 1), 2)
-            }
+
+        # pick favorite outcome
+        fav_key = max(true_probs, key=true_probs.get)
+        fav_prob = true_probs[fav_key]
+
+        # ignore draws for this high hit-rate strategy
+        if fav_key != 'draw':
+            # get corresponding market prob and odds
+            if fav_key == 'home':
+                market_prob = market_probs['home']
+                odds = home_odds
+            else:
+                market_prob = market_probs['away']
+                odds = away_odds
+
+            # Elo gap check
+            home_elo = self.team_ratings.get_rating(home_team)
+            away_elo = self.team_ratings.get_rating(away_team)
+            elo_gap = abs(home_elo - away_elo)
+
+            if (fav_prob >= MIN_FAVORITE_PROB and
+                fav_prob >= market_prob and
+                elo_gap >= MIN_ELO_GAP):
+
+                # Force flat staking for stability (1-2%); pass use_flat=True
+                bet_size = calculate_bet_size(self.bankroll, fav_prob / 100.0, odds, use_flat=True)
+
+                # compute edge for reporting
+                edge = calculate_edge(fav_prob, market_prob)
+
+                recommendation = {
+                    'bet_type': fav_key,
+                    'odds': odds,
+                    'stake': round(bet_size, 2),
+                    'edge': round(edge, 2),
+                    'true_probability': round(fav_prob, 2),
+                    'market_probability': round(market_prob, 2),
+                    'potential_return': round(bet_size * odds, 2),
+                    'potential_profit': round(bet_size * (odds - 1), 2),
+                    'elo_gap': int(elo_gap)
+                }
         
         return {
             'home_team': home_team,

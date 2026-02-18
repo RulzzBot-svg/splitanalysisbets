@@ -47,3 +47,9 @@ MAX_PROBABILITY = 85.0  # Maximum probability output (%)
 
 # Database Configuration
 DB_PATH = 'soccer_bets.db'
+
+# High hit-rate strategy filters
+# Minimum model probability (percent) required to consider a favorite
+MIN_FAVORITE_PROB = float(os.getenv('MIN_FAVORITE_PROB', 60.0))
+# Minimum Elo gap required between teams to consider betting
+MIN_ELO_GAP = int(os.getenv('MIN_ELO_GAP', 120))
