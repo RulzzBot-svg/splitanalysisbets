@@ -161,7 +161,7 @@ if not teams:
     st.warning("No teams found in DB. Import ratings first (nba-import-ratings) or update ratings.")
     st.stop()
 
-tabs = st.tabs(["Analyze", "Bets", "Stats"])
+tabs = st.tabs(["Analyze", "Bets", "Stats", "Update Ratings"])
 
 # Keep last analysis in session to allow one-click logging
 if "last_analysis" not in st.session_state:
@@ -350,3 +350,54 @@ with tabs[2]:
 
     except Exception as e:
         st.error(f"Could not compute stats. Error: {e}")
+
+with tabs[3]:
+    st.subheader("Update Elo Ratings from BALLDONTLIE")
+    st.markdown(
+        "Fetch all **final** NBA games for a date from the "
+        "[BALLDONTLIE API](https://www.balldontlie.io) and update team Elo ratings "
+        "automatically. Requires `BALLDONTLIE_API_KEY` in your `.env` file."
+    )
+
+    upd_date = st.date_input("Game date", value=date.today(), key="upd_date").isoformat()
+
+    if st.button("Update ratings from API", type="primary"):
+        try:
+            count = bot.update_ratings_from_api(upd_date)
+            if count:
+                st.success(f"✅ Updated Elo for {count} final game(s) on {upd_date}.")
+            else:
+                st.info(f"No final games found on {upd_date} (or they are not yet marked 'Final').")
+        except ValueError as exc:
+            st.error(str(exc))
+        except Exception as exc:
+            st.error(f"API error: {exc}")
+
+    st.markdown("---")
+    st.subheader("Manual Elo Update")
+    st.caption("Enter a single game result to update ratings without the API.")
+
+    mc1, mc2 = st.columns(2)
+    m_home = mc1.selectbox("Home team", options=teams, key="m_home")
+    m_away = mc2.selectbox("Away team", options=[t for t in teams if t != m_home], key="m_away")
+    sc1, sc2 = st.columns(2)
+    m_home_score = sc1.number_input("Home score", min_value=0, step=1, value=110, key="m_hs")
+    m_away_score = sc2.number_input("Away score", min_value=0, step=1, value=105, key="m_as")
+    m_game_date = st.date_input("Game date (manual)", value=date.today(), key="m_date").isoformat()
+
+    if st.button("Update ratings (manual)", key="manual_upd"):
+        try:
+            bot.update_ratings_from_result(
+                home_team=m_home,
+                away_team=m_away,
+                home_score=int(m_home_score),
+                away_score=int(m_away_score),
+                game_date=m_game_date,
+            )
+            st.success(
+                f"✅ Ratings updated — "
+                f"{m_home}: {bot.team_ratings.get_rating(m_home):.0f}, "
+                f"{m_away}: {bot.team_ratings.get_rating(m_away):.0f}"
+            )
+        except Exception as exc:
+            st.error(f"Could not update ratings: {exc}")

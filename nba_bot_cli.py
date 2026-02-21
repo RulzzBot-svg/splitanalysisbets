@@ -163,6 +163,23 @@ def settle_command(args):
 def update_ratings_command(args):
     """Handle nba-update-ratings command."""
     bot = NBABettingBot()
+
+    # --date mode: fetch final games from BALLDONTLIE and update automatically
+    if getattr(args, 'date', None):
+        try:
+            count = bot.update_ratings_from_api(args.date)
+            print(f"✓ Updated {count} game(s) from BALLDONTLIE for {args.date}")
+        except ValueError as e:
+            print(f"Error: {e}")
+            sys.exit(1)
+        return
+
+    # Manual mode: require home_team, away_team, home_score, away_score
+    if not all([args.home_team, args.away_team,
+                args.home_score is not None, args.away_score is not None]):
+        print("Error: provide --date OR all of: home_team away_team home_score away_score")
+        sys.exit(1)
+
     bot.update_ratings_from_result(
         home_team=args.home_team,
         away_team=args.away_team,
@@ -327,11 +344,18 @@ def main():
     # ---- nba-update-ratings ------------------------------------------------
     update_parser = subparsers.add_parser('nba-update-ratings',
                                           help='Update Elo ratings from a game result')
-    update_parser.add_argument('home_team', help='Home team name')
-    update_parser.add_argument('away_team', help='Away team name')
-    update_parser.add_argument('home_score', type=int, help='Home team score')
-    update_parser.add_argument('away_score', type=int, help='Away team score')
-    update_parser.add_argument('--game-date', help='Game date (YYYY-MM-DD)')
+    update_parser.add_argument('home_team', nargs='?', default=None,
+                               help='Home team name (omit when using --date)')
+    update_parser.add_argument('away_team', nargs='?', default=None,
+                               help='Away team name (omit when using --date)')
+    update_parser.add_argument('home_score', nargs='?', type=int, default=None,
+                               help='Home team score (omit when using --date)')
+    update_parser.add_argument('away_score', nargs='?', type=int, default=None,
+                               help='Away team score (omit when using --date)')
+    update_parser.add_argument('--date',
+                               help='Fetch all final games for this date from BALLDONTLIE '
+                                    '(YYYY-MM-DD). Requires BALLDONTLIE_API_KEY in .env.')
+    update_parser.add_argument('--game-date', help='Game date (YYYY-MM-DD) for manual entry')
     update_parser.add_argument('--season', help='Season label (e.g. 2024-25)')
 
     # ---- nba-stats ---------------------------------------------------------

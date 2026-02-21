@@ -194,6 +194,55 @@ class NBABettingBot:
             'debug': debug_info,
         }
 
+    def analyze_game_manual(
+        self,
+        home_team: str,
+        away_team: str,
+        home_odds: float,
+        away_odds: float,
+    ) -> Dict:
+        """
+        Thin wrapper around analyze_game() that returns UI-friendly flat keys.
+
+        Returns a dict with:
+            home_elo, away_elo,
+            market_home, market_away,
+            true_home, true_away,
+            edge_home, edge_away,
+            recommendation (or None) with keys:
+                bet_type, odds, stake, true_prob, market_prob, edge
+        """
+        result = self.analyze_game(
+            home_team=home_team,
+            away_team=away_team,
+            home_odds=home_odds,
+            away_odds=away_odds,
+        )
+
+        rec = result.get("recommendation")
+        ui_rec = None
+        if rec:
+            ui_rec = {
+                "bet_type": rec["bet_type"],
+                "odds": rec["odds"],
+                "stake": rec["stake"],
+                "true_prob": rec["true_probability"],
+                "market_prob": rec["market_probability"],
+                "edge": rec["edge"],
+            }
+
+        return {
+            "home_elo": result["team_ratings"]["home"],
+            "away_elo": result["team_ratings"]["away"],
+            "market_home": result["market_probabilities"]["home"],
+            "market_away": result["market_probabilities"]["away"],
+            "true_home": result["true_probabilities"]["home"],
+            "true_away": result["true_probabilities"]["away"],
+            "edge_home": result["edges"]["home"],
+            "edge_away": result["edges"]["away"],
+            "recommendation": ui_rec,
+        }
+
     # ------------------------------------------------------------------
     # Bet management
     # ------------------------------------------------------------------
@@ -243,6 +292,62 @@ class NBABettingBot:
             self.bankroll += bet['stake']
 
         self.database.update_bet_result(bet_id, result, profit_loss)
+
+    def update_ratings_from_api(self, game_date: str) -> int:
+        """
+        Fetch final game results from BALLDONTLIE for *game_date* and update Elo.
+
+        Requires BALLDONTLIE_API_KEY in the environment (or .env).
+
+        Args:
+            game_date: Date string in YYYY-MM-DD format.
+
+        Returns:
+            Number of games processed.
+        """
+        from nba_bot.api_client import BallDontLieClient
+        from nba_bot.elo import update_elo as _update_elo
+
+        client = BallDontLieClient()
+        games = client.get_games(game_date)
+
+        updated = 0
+        for g in games:
+            # Accept "Final", "Final/OT", etc. but not ambiguous substrings.
+            # Also check the top-level 'status' field as a fallback.
+            period_detail = (g.get("period_detail") or "").lower().strip()
+            status = (g.get("status") or "").lower().strip()
+            is_final = (
+                status == "final"
+                or period_detail == "final"
+                or period_detail.startswith("final/")
+            )
+            if not is_final:
+                continue
+
+            home_abbr = g["home_team"]["abbreviation"]
+            away_abbr = g["visitor_team"]["abbreviation"]
+            hs = g.get("home_team_score")
+            vs = g.get("visitor_team_score")
+            if hs is None or vs is None:
+                continue
+
+            home_won = int(hs) > int(vs)
+
+            r_home = self.team_ratings.get_rating(home_abbr)
+            r_away = self.team_ratings.get_rating(away_abbr)
+            r_home_new, r_away_new = _update_elo(r_home, r_away, home_won)
+
+            self.team_ratings.update_rating(home_abbr, r_home_new)
+            self.team_ratings.update_rating(away_abbr, r_away_new)
+            self.database.save_team_rating(home_abbr, r_home_new)
+            self.database.save_team_rating(away_abbr, r_away_new)
+            self.database.add_game_result(
+                game_date, home_abbr, away_abbr, int(hs), int(vs)
+            )
+            updated += 1
+
+        return updated
 
     # ------------------------------------------------------------------
     # Rating management

@@ -33,6 +33,7 @@ except Exception:
 
 # API Configuration
 NBA_API_KEY = os.getenv('NBA_API_KEY')
+BALLDONTLIE_API_KEY = os.getenv('BALLDONTLIE_API_KEY')
 NBA_ELO_CSV = os.getenv('NBA_ELO_CSV')
 
 # Betting Configuration
