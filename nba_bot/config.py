@@ -2,11 +2,38 @@
 Configuration module for NBA betting bot
 """
 import os
+
+
+def _load_env_fallback(path: str = '.env') -> None:
+    """Load .env without python-dotenv (minimal KEY=VALUE parser)."""
+    if not os.path.isfile(path):
+        return
+    try:
+        with open(path, 'r', encoding='utf-8') as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                if '=' not in line:
+                    continue
+                key, value = line.split('=', 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key:
+                    os.environ.setdefault(key, value)
+    except Exception:
+        return
+
+
 try:
     from dotenv import load_dotenv
     load_dotenv()
 except Exception:
-    pass
+    _load_env_fallback()
+
+# API Configuration
+NBA_API_KEY = os.getenv('NBA_API_KEY')
+NBA_ELO_CSV = os.getenv('NBA_ELO_CSV')
 
 # Betting Configuration
 BANKROLL = float(os.getenv('NBA_BANKROLL', os.getenv('BANKROLL', 1000.0)))

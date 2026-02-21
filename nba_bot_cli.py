@@ -15,6 +15,7 @@ import argparse
 import sys
 from nba_bot.bot import NBABettingBot
 from nba_bot.config import BANKROLL, EDGE_THRESHOLD
+from nba_bot.model import normalize_team_name, is_current_nba_team
 
 
 # ---------------------------------------------------------------------------
@@ -30,6 +31,16 @@ def print_analysis(analysis: dict):
     print("\nTeam Elo Ratings:")
     print(f"  {analysis['home_team']}: {analysis['team_ratings']['home']:.0f}")
     print(f"  {analysis['away_team']}: {analysis['team_ratings']['away']:.0f}")
+
+    debug_info = analysis.get('debug')
+    if debug_info:
+        print("\nDebug:")
+        print(f"  home_team (normalized): {normalize_team_name(analysis['home_team'])}")
+        print(f"  away_team (normalized): {normalize_team_name(analysis['away_team'])}")
+        print(f"  home_elo_raw: {debug_info['home_rating']:.2f}")
+        print(f"  away_elo_raw: {debug_info['away_rating']:.2f}")
+        print(f"  elo_diff (home-away, adjusted): {debug_info['elo_diff']:.2f}")
+        print(f"  p_home_raw (pre-calibration): {debug_info['home_win_p_raw'] * 100.0:.2f}%")
 
     print("\nMarket Probabilities (vig removed):")
     print(f"  Home: {analysis['market_probabilities']['home']:.2f}%")
@@ -98,6 +109,7 @@ def analyze_command(args):
         away_b2b=args.away_b2b,
         home_star_out=args.home_star_out,
         away_star_out=args.away_star_out,
+        debug=args.debug,
     )
 
     print_analysis(analysis)
@@ -233,6 +245,8 @@ def import_ratings_command(args):
                 elo = (row.get('elo') or row.get('rating') or '').strip()
                 if not team or not elo:
                     continue
+                if not is_current_nba_team(team):
+                    continue
                 try:
                     elo_val = float(elo)
                 except ValueError:
@@ -289,6 +303,8 @@ def main():
                                 help='Current bankroll')
     analyze_parser.add_argument('--interactive', action='store_true',
                                 help='Prompt to place bet after analysis')
+    analyze_parser.add_argument('--debug', action='store_true',
+                                help='Print normalized team keys, Elo diff, and raw model probability')
 
     # ---- nba-bet -----------------------------------------------------------
     bet_parser = subparsers.add_parser('nba-bet', help='Record a bet manually')
@@ -297,8 +313,8 @@ def main():
     bet_parser.add_argument('bet_type', choices=['home', 'away'], help='Bet type')
     bet_parser.add_argument('odds', type=float, help='Decimal odds')
     bet_parser.add_argument('stake', type=float, help='Bet amount')
-    bet_parser.add_argument('true_prob', type=float, help='True probability (%)')
-    bet_parser.add_argument('market_prob', type=float, help='Market probability (%)')
+    bet_parser.add_argument('true_prob', type=float, help='True probability (%%)')
+    bet_parser.add_argument('market_prob', type=float, help='Market probability (%%)')
     bet_parser.add_argument('--match-date', help='Game date (YYYY-MM-DD)')
     bet_parser.add_argument('--bankroll', type=float, default=BANKROLL,
                             help='Current bankroll')

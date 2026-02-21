@@ -1,6 +1,8 @@
 """
 Main NBA betting bot orchestrator.
 """
+import csv
+import os
 from typing import Dict, List, Optional
 
 from nba_bot.probability import (
@@ -8,10 +10,10 @@ from nba_bot.probability import (
     decimal_to_implied_prob,
     remove_vig_two_way,
 )
-from nba_bot.model import NBATeamRatings, NBAModel, normalize_team_name
+from nba_bot.model import NBATeamRatings, NBAModel, normalize_team_name, is_current_nba_team
 from nba_bot.betting import calculate_edge, calculate_bet_size
 from nba_bot.database import NBADatabase
-from nba_bot.config import BANKROLL, MIN_FAVORITE_PROB, MIN_EDGE
+from nba_bot.config import BANKROLL, MIN_FAVORITE_PROB, MIN_EDGE, NBA_ELO_CSV
 
 
 class NBABettingBot:
@@ -25,7 +27,43 @@ class NBABettingBot:
 
         # Load persisted team ratings
         saved_ratings = self.database.load_team_ratings()
+        if not saved_ratings and NBA_ELO_CSV:
+            imported = self._import_ratings_from_csv(NBA_ELO_CSV)
+            if imported:
+                saved_ratings = self.database.load_team_ratings()
         self.team_ratings.ratings.update(saved_ratings)
+
+    def _import_ratings_from_csv(self, csv_path: str) -> int:
+        """Import Elo ratings from a CSV file (team_name/team + elo/rating)."""
+        if not os.path.isfile(csv_path):
+            print(f"Warning: Elo CSV not found: {csv_path}")
+            return 0
+
+        count = 0
+        try:
+            with open(csv_path, newline='', encoding='utf-8') as fh:
+                reader = csv.DictReader(fh)
+                for row in reader:
+                    team = (row.get('team_name') or row.get('team') or '').strip()
+                    elo = (row.get('elo') or row.get('rating') or '').strip()
+                    if not team or not elo:
+                        continue
+                    if not is_current_nba_team(team):
+                        continue
+                    try:
+                        elo_val = float(elo)
+                    except ValueError:
+                        continue
+                    self.team_ratings.update_rating(team, elo_val)
+                    self.database.save_team_rating(team, elo_val)
+                    count += 1
+        except Exception as exc:
+            print(f"Warning: failed to import Elo CSV: {exc}")
+            return 0
+
+        if count:
+            print(f"Imported {count} Elo ratings from {csv_path}")
+        return count
 
     # ------------------------------------------------------------------
     # Core analysis
@@ -45,6 +83,7 @@ class NBABettingBot:
         home_star_out: bool = False,
         away_star_out: bool = False,
         use_calibration: bool = True,
+        debug: bool = False,
     ) -> Dict:
         """
         Analyse an NBA game and return a betting recommendation.
@@ -97,7 +136,10 @@ class NBABettingBot:
             home_star_out=home_star_out,
             away_star_out=away_star_out,
             market_probabilities=market_probs if use_calibration else None,
+            return_debug=debug,
         )
+
+        debug_info = true_probs.pop('debug', None) if debug else None
 
         # --- Edges ---
         home_edge = calculate_edge(true_probs['home'], market_probs['home'])
@@ -149,6 +191,7 @@ class NBABettingBot:
             },
             'recommendation': recommendation,
             'calibration_applied': use_calibration,
+            'debug': debug_info,
         }
 
     # ------------------------------------------------------------------
