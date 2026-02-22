@@ -61,6 +61,41 @@ def remove_vig_two_way(home_prob: float, away_prob: float) -> Dict[str, float]:
     }
 
 
+def decimal_odds_to_probability(odds: float) -> float:
+    """
+    Convert decimal odds to a probability fraction (0-1).
+
+    This is the inverse of decimal odds: prob = 1 / odds.
+    Used by the Streamlit UI where probabilities are then scaled to %.
+
+    Args:
+        odds: Decimal odds (e.g. 1.67)
+
+    Returns:
+        Probability as a fraction in [0, 1]
+    """
+    if odds < 1.0:
+        return 0.0
+    return 1.0 / odds
+
+
+def cents_to_probability(cents: float) -> float:
+    """
+    Convert a "cents" split value to a probability fraction (0-1).
+
+    In the UI, market splits are entered as cents (e.g. home=41, away=60).
+    The implied probability fraction is simply cents / 100.  The vig is
+    removed later via remove_vig_two_way().
+
+    Args:
+        cents: Implied probability expressed in cents (e.g. 41 → 0.41)
+
+    Returns:
+        Probability as a fraction in [0, 1]
+    """
+    return max(0.0, cents / 100.0)
+
+
 def implied_prob_to_decimal(probability: float) -> float:
     """
     Convert probability (%) to decimal odds.
